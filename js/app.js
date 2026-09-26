@@ -6,13 +6,20 @@ const zoomValue = document.getElementById('zoom-value');
 const navButtons = document.querySelectorAll('.nav-button');
 const fileName = document.getElementById('file-name');
 
-const SVG_URL = './2.2 Mapa conceptual.drawio.svg';
+const SVG_URLS = [
+  './assets/mapa-conceptual.svg',
+  './2.2%20Mapa%20conceptual.drawio.svg',
+];
 const MAP_WIDTH = 4135;
 const MAP_HEIGHT = 3508;
 
 const viewPresets = {
   fit: { label: 'Vista general', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
   actual: { label: '100%', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
+  section1: { label: 'Antenas WiFi', target: { x: 5, y: 200, w: 1440, h: 900 } },
+  section2: { label: 'Satelital', target: { x: 2380, y: 210, w: 1400, h: 1140 } },
+  section3: { label: 'Aplicaciones', target: { x: 40, y: 1440, w: 1370, h: 860 } },
+  section4: { label: 'Fenómenos', target: { x: 2200, y: 1480, w: 1800, h: 1050 } },
 };
 
 const state = {
@@ -24,6 +31,7 @@ const state = {
 };
 
 let svgRoot = null;
+let cameraAnimationFrame = null;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -41,49 +49,6 @@ function updateZoomText() {
   zoomValue.textContent = `${percent}%`;
 }
 
-function buildSectionTargets(svg) {
-  const sectionRules = [
-    { key: 'section1', pattern: /TIPOS DE ANTENAS|DIPOLO|YAGI|PARABOLICA|OMNIDIRECCIONAL/i },
-    { key: 'section2', pattern: /ANTENA SATELITAL|REFLECTOR PARABOLICO|LNB|BUC|FEEDHORN|SOPORTE/i },
-    { key: 'section3', pattern: /APLICACIONES Y USOS|TELEFONIA MOVIL|RADIODIFUSION|REDES WIFI|COMUNICACION SATELITAL/i },
-    { key: 'section4', pattern: /FENOMENOS FISICOS|ATENUACION|INTERFERENCIA|REFLEXION|DIFRACCION|DISPERSION/i },
-  ];
-
-  const candidates = [...svg.querySelectorAll('g')]
-    .map((group) => {
-      const text = (group.textContent || '').replace(/\s+/g, ' ').trim();
-      const bbox = group.getBBox && group.getBBox();
-      if (!bbox || !text) return null;
-      return { group, text, bbox };
-    })
-    .filter(Boolean);
-
-  sectionRules.forEach(({ key, pattern }) => {
-    const matched = candidates.filter(({ text }) => pattern.test(text));
-    if (!matched.length) return;
-
-    const bounds = matched.reduce((acc, item) => {
-      const { bbox } = item;
-      acc.x = Math.min(acc.x, bbox.x);
-      acc.y = Math.min(acc.y, bbox.y);
-      acc.right = Math.max(acc.right, bbox.x + bbox.width);
-      acc.bottom = Math.max(acc.bottom, bbox.y + bbox.height);
-      return acc;
-    }, { x: Infinity, y: Infinity, right: -Infinity, bottom: -Infinity });
-
-    const pad = 120;
-    viewPresets[key] = {
-      label: key === 'section1' ? 'Antenas WiFi' : key === 'section2' ? 'Satelital' : key === 'section3' ? 'Aplicaciones' : 'Fenómenos',
-      target: {
-        x: clamp(bounds.x - pad, 0, MAP_WIDTH),
-        y: clamp(bounds.y - pad, 0, MAP_HEIGHT),
-        w: clamp(bounds.right - bounds.x + pad * 2, 700, MAP_WIDTH),
-        h: clamp(bounds.bottom - bounds.y + pad * 2, 500, MAP_HEIGHT),
-      },
-    };
-  });
-}
-
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('is-visible');
@@ -97,15 +62,63 @@ function applyViewBox() {
   updateZoomText();
 }
 
+function stopCameraAnimation() {
+  if (cameraAnimationFrame !== null) {
+    cancelAnimationFrame(cameraAnimationFrame);
+    cameraAnimationFrame = null;
+  }
+}
+
+function animateCamera(target, duration = 950) {
+  stopCameraAnimation();
+
+  const start = { x: state.x, y: state.y, width: state.width, height: state.height };
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (prefersReducedMotion) {
+    Object.assign(state, target);
+    applyViewBox();
+    return;
+  }
+
+  const startedAt = performance.now();
+  const animate = (now) => {
+    const progress = Math.min((now - startedAt) / duration, 1);
+    const eased = progress * progress * (3 - 2 * progress);
+
+    state.x = start.x + (target.x - start.x) * eased;
+    state.y = start.y + (target.y - start.y) * eased;
+    state.width = start.width + (target.width - start.width) * eased;
+    state.height = start.height + (target.height - start.height) * eased;
+    applyViewBox();
+
+    if (progress < 1) {
+      cameraAnimationFrame = requestAnimationFrame(animate);
+    } else {
+      cameraAnimationFrame = null;
+      Object.assign(state, target);
+      applyViewBox();
+    }
+  };
+
+  cameraAnimationFrame = requestAnimationFrame(animate);
+}
+
 function setView(key) {
   const preset = viewPresets[key];
   if (!preset) return;
 
+  if (!svgRoot) {
+    return;
+  }
+
   state.active = key;
-  state.x = preset.target.x;
-  state.y = preset.target.y;
-  state.width = preset.target.w;
-  state.height = preset.target.h;
+  const target = {
+    x: clamp(preset.target.x, 0, MAP_WIDTH - preset.target.w),
+    y: clamp(preset.target.y, 0, MAP_HEIGHT - preset.target.h),
+    width: preset.target.w,
+    height: preset.target.h,
+  };
 
   navButtons.forEach((button) => {
     const buttonMatches = key === 'fit'
@@ -113,10 +126,60 @@ function setView(key) {
       : Number(button.dataset.section) === Number(key.replace('section', ''));
 
     button.classList.toggle('is-active', Boolean(buttonMatches));
+    if (button.matches('[data-section]')) {
+      button.setAttribute('aria-pressed', String(Boolean(buttonMatches)));
+    }
   });
 
   updateMessage(preset.label);
-  applyViewBox();
+  animateCamera(target);
+}
+
+function zoomAt(
+  factor,
+  anchorX = state.x + state.width / 2,
+  anchorY = state.y + state.height / 2,
+  duration = 360,
+  anchorRatioX = 0.5,
+  anchorRatioY = 0.5,
+) {
+  const nextWidth = clamp(state.width * factor, 700, MAP_WIDTH);
+  const nextHeight = clamp(state.height * factor, 600, MAP_HEIGHT);
+  const nextX = clamp(anchorX - nextWidth * anchorRatioX, 0, MAP_WIDTH - nextWidth);
+  const nextY = clamp(anchorY - nextHeight * anchorRatioY, 0, MAP_HEIGHT - nextHeight);
+
+  animateCamera({ x: nextX, y: nextY, width: nextWidth, height: nextHeight }, duration);
+}
+
+function runTour() {
+  const steps = ['section1', 'section2', 'section3', 'section4'];
+  let index = 0;
+  const progress = document.getElementById('tour-progress');
+  const fill = progress?.querySelector('i');
+
+  if (!progress || !fill) {
+    setView('section1');
+    return;
+  }
+
+  const tick = () => {
+    if (index >= steps.length) {
+      progress.style.opacity = '0';
+      setView('fit');
+      return;
+    }
+
+    const step = steps[index];
+    setView(step);
+    const value = ((index + 1) / steps.length) * 100;
+    fill.style.width = `${value}%`;
+    progress.style.opacity = '1';
+
+    index += 1;
+    setTimeout(tick, 1400);
+  };
+
+  tick();
 }
 
 function setupZoomControls() {
@@ -134,39 +197,41 @@ function setupZoomControls() {
   });
 
   document.querySelector('[data-action="zoom-in"]').addEventListener('click', () => {
-    const factor = 1.18;
-    const centerX = state.x + state.width / 2;
-    const centerY = state.y + state.height / 2;
-    const newWidth = clamp(state.width / factor, 700, MAP_WIDTH);
-    const newHeight = clamp(state.height / factor, 600, MAP_HEIGHT);
-    state.width = newWidth;
-    state.height = newHeight;
-    state.x = centerX - newWidth / 2;
-    state.y = centerY - newHeight / 2;
-    state.x = clamp(state.x, 0, MAP_WIDTH - newWidth);
-    state.y = clamp(state.y, 0, MAP_HEIGHT - newHeight);
-    applyViewBox();
+    zoomAt(1 / 1.18);
   });
 
   document.querySelector('[data-action="zoom-out"]').addEventListener('click', () => {
-    const factor = 1.18;
-    const centerX = state.x + state.width / 2;
-    const centerY = state.y + state.height / 2;
-    const newWidth = clamp(state.width * factor, 700, MAP_WIDTH);
-    const newHeight = clamp(state.height * factor, 600, MAP_HEIGHT);
-    state.width = newWidth;
-    state.height = newHeight;
-    state.x = centerX - newWidth / 2;
-    state.y = centerY - newHeight / 2;
-    state.x = clamp(state.x, 0, MAP_WIDTH - newWidth);
-    state.y = clamp(state.y, 0, MAP_HEIGHT - newHeight);
-    applyViewBox();
+    zoomAt(1.18);
   });
 
   document.querySelector('[data-action="actual-size"]').addEventListener('click', () => {
     setView('actual');
     showToast('100%');
   });
+
+  document.querySelector('[data-action="tour"]').addEventListener('click', () => {
+    runTour();
+  });
+}
+
+function attachWheelZoom() {
+  mapWorld.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * 40
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? event.deltaY * mapWorld.clientHeight
+        : event.deltaY;
+    const factor = Math.exp(delta * 0.0018);
+    const cursor = svgRoot.createSVGPoint();
+    cursor.x = event.clientX;
+    cursor.y = event.clientY;
+    const mapPoint = cursor.matrixTransform(svgRoot.getScreenCTM().inverse());
+    const anchorRatioX = clamp((mapPoint.x - state.x) / state.width, 0, 1);
+    const anchorRatioY = clamp((mapPoint.y - state.y) / state.height, 0, 1);
+
+    zoomAt(factor, mapPoint.x, mapPoint.y, 130, anchorRatioX, anchorRatioY);
+  }, { passive: false });
 }
 
 function attachPointerDrag() {
@@ -179,6 +244,7 @@ function attachPointerDrag() {
   let originY = 0;
 
   mapWorld.addEventListener('pointerdown', (event) => {
+    stopCameraAnimation();
     isDragging = true;
     startX = event.clientX;
     startY = event.clientY;
@@ -211,9 +277,21 @@ function attachPointerDrag() {
 
 async function loadMap() {
   try {
-    const response = await fetch(SVG_URL, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`No se pudo cargar el SVG (${response.status})`);
+    let response;
+    let lastError = null;
+
+    for (const url of SVG_URLS) {
+      try {
+        response = await fetch(url, { cache: 'no-store' });
+        if (response.ok) break;
+        lastError = new Error(`No se pudo cargar el SVG (${response.status}) en ${url}`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw lastError || new Error('No se pudo cargar el SVG.');
     }
 
     const svgText = await response.text();
@@ -236,7 +314,6 @@ async function loadMap() {
     mapWorld.innerHTML = '';
     mapWorld.appendChild(svg);
     svgRoot = svg;
-    buildSectionTargets(svg);
 
     requestAnimationFrame(() => {
       svg.style.opacity = '1';
@@ -252,5 +329,6 @@ async function loadMap() {
 
 setupZoomControls();
 attachPointerDrag();
+attachWheelZoom();
 loadMap();
 updateZoomText();
