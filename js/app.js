@@ -17,7 +17,7 @@ const viewPresets = {
   fit: { label: 'Vista general', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
   actual: { label: '100%', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
   section1: { label: 'Antenas WiFi', target: { x: 5, y: 200, w: 1440, h: 900 } },
-  section2: { label: 'Satelital', target: { x: 2380, y: 210, w: 1400, h: 1140 } },
+  section2: { label: 'Satelital', target: { x: 2253, y: 107, w: 1654, h: 1347 } },
   section3: { label: 'Aplicaciones', target: { x: 40, y: 1440, w: 1370, h: 860 } },
   section4: { label: 'Fenómenos', target: { x: 2038, y: 1386, w: 2124, h: 1239 } },
 };
