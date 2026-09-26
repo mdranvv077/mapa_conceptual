@@ -7,21 +7,23 @@ const navButtons = document.querySelectorAll('.nav-button');
 const fileName = document.getElementById('file-name');
 
 const SVG_URL = './2.2 Mapa conceptual.drawio.svg';
+const MAP_WIDTH = 4135;
+const MAP_HEIGHT = 3508;
 
 const viewPresets = {
-  fit: { label: 'Vista general', scale: 0.42, center: { x: 2067, y: 1754 } },
-  actual: { label: '100%', scale: 1, center: { x: 2067, y: 1754 } },
-  section1: { label: 'Antenas WiFi', scale: 1.8, center: { x: 1180, y: 1020 } },
-  section2: { label: 'Satelital', scale: 1.75, center: { x: 2720, y: 980 } },
-  section3: { label: 'Aplicaciones', scale: 1.55, center: { x: 1650, y: 2200 } },
-  section4: { label: 'Fenómenos', scale: 1.65, center: { x: 2760, y: 2750 } },
+  fit: { label: 'Vista general', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
+  actual: { label: '100%', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
+  section1: { label: 'Antenas WiFi', target: { x: 300, y: 300, w: 1800, h: 1200 } },
+  section2: { label: 'Satelital', target: { x: 1800, y: 220, w: 1700, h: 1300 } },
+  section3: { label: 'Aplicaciones', target: { x: 450, y: 1600, w: 2100, h: 1200 } },
+  section4: { label: 'Fenómenos', target: { x: 1850, y: 1950, w: 1700, h: 1100 } },
 };
 
 const state = {
-  scale: viewPresets.fit.scale,
   x: 0,
   y: 0,
-  center: { ...viewPresets.fit.center },
+  width: MAP_WIDTH,
+  height: MAP_HEIGHT,
   active: 'fit',
 };
 
@@ -38,7 +40,8 @@ function updateMessage(label) {
 }
 
 function updateZoomText() {
-  const percent = Math.round(state.scale * 100);
+  const ratio = MAP_WIDTH / state.width;
+  const percent = Math.round(ratio * 100);
   zoomValue.textContent = `${percent}%`;
 }
 
@@ -48,15 +51,10 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove('is-visible'), 1300);
 }
 
-function applyTransform() {
+function applyViewBox() {
   if (!svgRoot) return;
 
-  const width = mapWorld.clientWidth || 1200;
-  const height = mapWorld.clientHeight || 700;
-  state.x = (width / 2) - (state.center.x * state.scale);
-  state.y = (height / 2) - (state.center.y * state.scale);
-
-  svgRoot.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+  svgRoot.setAttribute('viewBox', `${state.x} ${state.y} ${state.width} ${state.height}`);
   updateZoomText();
 }
 
@@ -65,8 +63,10 @@ function setView(key) {
   if (!preset) return;
 
   state.active = key;
-  state.scale = preset.scale;
-  state.center = { ...preset.center };
+  state.x = preset.target.x;
+  state.y = preset.target.y;
+  state.width = preset.target.w;
+  state.height = preset.target.h;
 
   navButtons.forEach((button) => {
     const buttonMatches = key === 'fit'
@@ -77,7 +77,7 @@ function setView(key) {
   });
 
   updateMessage(preset.label);
-  applyTransform();
+  applyViewBox();
 }
 
 function setupZoomControls() {
@@ -95,13 +95,33 @@ function setupZoomControls() {
   });
 
   document.querySelector('[data-action="zoom-in"]').addEventListener('click', () => {
-    state.scale = clamp(state.scale + 0.12, 0.4, 3.4);
-    applyTransform();
+    const factor = 1.18;
+    const centerX = state.x + state.width / 2;
+    const centerY = state.y + state.height / 2;
+    const newWidth = clamp(state.width / factor, 700, MAP_WIDTH);
+    const newHeight = clamp(state.height / factor, 600, MAP_HEIGHT);
+    state.width = newWidth;
+    state.height = newHeight;
+    state.x = centerX - newWidth / 2;
+    state.y = centerY - newHeight / 2;
+    state.x = clamp(state.x, 0, MAP_WIDTH - newWidth);
+    state.y = clamp(state.y, 0, MAP_HEIGHT - newHeight);
+    applyViewBox();
   });
 
   document.querySelector('[data-action="zoom-out"]').addEventListener('click', () => {
-    state.scale = clamp(state.scale - 0.12, 0.4, 3.4);
-    applyTransform();
+    const factor = 1.18;
+    const centerX = state.x + state.width / 2;
+    const centerY = state.y + state.height / 2;
+    const newWidth = clamp(state.width * factor, 700, MAP_WIDTH);
+    const newHeight = clamp(state.height * factor, 600, MAP_HEIGHT);
+    state.width = newWidth;
+    state.height = newHeight;
+    state.x = centerX - newWidth / 2;
+    state.y = centerY - newHeight / 2;
+    state.x = clamp(state.x, 0, MAP_WIDTH - newWidth);
+    state.y = clamp(state.y, 0, MAP_HEIGHT - newHeight);
+    applyViewBox();
   });
 
   document.querySelector('[data-action="actual-size"]').addEventListener('click', () => {
@@ -133,11 +153,12 @@ function attachPointerDrag() {
 
     const dx = event.clientX - startX;
     const dy = event.clientY - startY;
-    state.x = originX + dx;
-    state.y = originY + dy;
-    state.center.x = (mapWorld.clientWidth / 2 - state.x) / state.scale;
-    state.center.y = (mapWorld.clientHeight / 2 - state.y) / state.scale;
-    applyTransform();
+    const scaleX = state.width / (mapWorld.clientWidth || 1);
+    const scaleY = state.height / (mapWorld.clientHeight || 1);
+
+    state.x = clamp(originX - dx * scaleX, 0, MAP_WIDTH - state.width);
+    state.y = clamp(originY - dy * scaleY, 0, MAP_HEIGHT - state.height);
+    applyViewBox();
   });
 
   mapWorld.addEventListener('pointerup', () => {
