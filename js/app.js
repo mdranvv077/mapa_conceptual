@@ -13,10 +13,6 @@ const MAP_HEIGHT = 3508;
 const viewPresets = {
   fit: { label: 'Vista general', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
   actual: { label: '100%', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
-  section1: { label: 'Antenas WiFi', target: { x: 300, y: 300, w: 1800, h: 1200 } },
-  section2: { label: 'Satelital', target: { x: 1800, y: 220, w: 1700, h: 1300 } },
-  section3: { label: 'Aplicaciones', target: { x: 450, y: 1600, w: 2100, h: 1200 } },
-  section4: { label: 'Fenómenos', target: { x: 1850, y: 1950, w: 1700, h: 1100 } },
 };
 
 const state = {
@@ -43,6 +39,49 @@ function updateZoomText() {
   const ratio = MAP_WIDTH / state.width;
   const percent = Math.round(ratio * 100);
   zoomValue.textContent = `${percent}%`;
+}
+
+function buildSectionTargets(svg) {
+  const sectionRules = [
+    { key: 'section1', pattern: /TIPOS DE ANTENAS|DIPOLO|YAGI|PARABOLICA|OMNIDIRECCIONAL/i },
+    { key: 'section2', pattern: /ANTENA SATELITAL|REFLECTOR PARABOLICO|LNB|BUC|FEEDHORN|SOPORTE/i },
+    { key: 'section3', pattern: /APLICACIONES Y USOS|TELEFONIA MOVIL|RADIODIFUSION|REDES WIFI|COMUNICACION SATELITAL/i },
+    { key: 'section4', pattern: /FENOMENOS FISICOS|ATENUACION|INTERFERENCIA|REFLEXION|DIFRACCION|DISPERSION/i },
+  ];
+
+  const candidates = [...svg.querySelectorAll('g')]
+    .map((group) => {
+      const text = (group.textContent || '').replace(/\s+/g, ' ').trim();
+      const bbox = group.getBBox && group.getBBox();
+      if (!bbox || !text) return null;
+      return { group, text, bbox };
+    })
+    .filter(Boolean);
+
+  sectionRules.forEach(({ key, pattern }) => {
+    const matched = candidates.filter(({ text }) => pattern.test(text));
+    if (!matched.length) return;
+
+    const bounds = matched.reduce((acc, item) => {
+      const { bbox } = item;
+      acc.x = Math.min(acc.x, bbox.x);
+      acc.y = Math.min(acc.y, bbox.y);
+      acc.right = Math.max(acc.right, bbox.x + bbox.width);
+      acc.bottom = Math.max(acc.bottom, bbox.y + bbox.height);
+      return acc;
+    }, { x: Infinity, y: Infinity, right: -Infinity, bottom: -Infinity });
+
+    const pad = 120;
+    viewPresets[key] = {
+      label: key === 'section1' ? 'Antenas WiFi' : key === 'section2' ? 'Satelital' : key === 'section3' ? 'Aplicaciones' : 'Fenómenos',
+      target: {
+        x: clamp(bounds.x - pad, 0, MAP_WIDTH),
+        y: clamp(bounds.y - pad, 0, MAP_HEIGHT),
+        w: clamp(bounds.right - bounds.x + pad * 2, 700, MAP_WIDTH),
+        h: clamp(bounds.bottom - bounds.y + pad * 2, 500, MAP_HEIGHT),
+      },
+    };
+  });
 }
 
 function showToast(message) {
@@ -197,6 +236,7 @@ async function loadMap() {
     mapWorld.innerHTML = '';
     mapWorld.appendChild(svg);
     svgRoot = svg;
+    buildSectionTargets(svg);
 
     requestAnimationFrame(() => {
       svg.style.opacity = '1';
