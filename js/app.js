@@ -52,6 +52,26 @@ function updateZoomText() {
   zoomValue.textContent = `${percent}%`;
 }
 
+function styleMapHeadings(svg) {
+  const headings = [
+    { text: 'ANTENAS, FENÓMENOS FÍSICOS Y SU APLICACIÓN EN LAS TELECOMUNICACIONES', size: '72px', weight: '600' },
+    { text: 'Mapa conceptual — tipos, componentes, usos y comportamiento de las señales', size: '48px', weight: '500' },
+  ];
+
+  svg.querySelectorAll('foreignObject').forEach((foreignObject) => {
+    const text = foreignObject.textContent.replace(/\s+/g, ' ').trim();
+    const heading = headings.find((item) => item.text === text);
+    const textElement = foreignObject.querySelector('div > div > div');
+
+    if (!heading || !textElement) return;
+
+    textElement.style.fontFamily = '"DM Sans", Inter, "Segoe UI", sans-serif';
+    textElement.style.fontSize = heading.size;
+    textElement.style.fontWeight = heading.weight;
+    textElement.style.letterSpacing = '0';
+  });
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('is-visible');
@@ -381,6 +401,7 @@ async function loadMap() {
       throw new Error('No se encontró un elemento <svg> válido en el archivo.');
     }
 
+    styleMapHeadings(svg);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', 'Mapa conceptual interactivo');
