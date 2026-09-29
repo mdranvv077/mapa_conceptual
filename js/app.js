@@ -197,6 +197,13 @@ function revealFullscreenControls() {
   }, 3000);
 }
 
+function hideFullscreenControls() {
+  if (document.fullscreenElement !== appShell) return;
+
+  clearTimeout(controlsHideTimer);
+  appShell.classList.add('is-controls-hidden');
+}
+
 function syncFullscreenState() {
   const isFullscreen = document.fullscreenElement === appShell;
   appShell.classList.toggle('is-fullscreen', isFullscreen);
@@ -241,13 +248,10 @@ function setupKeyboardNavigation() {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
 
-    if (document.fullscreenElement === appShell) {
-      revealFullscreenControls();
-    }
-
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
     event.preventDefault();
+    hideFullscreenControls();
     const currentScene = state.active === 'actual' ? 'fit' : state.active;
     const currentIndex = Math.max(sceneOrder.indexOf(currentScene), 0);
     const direction = event.key === 'ArrowRight' ? 1 : -1;
