@@ -5,6 +5,8 @@ const mapMessage = document.getElementById('map-message');
 const zoomValue = document.getElementById('zoom-value');
 const navButtons = document.querySelectorAll('.nav-button');
 const fileName = document.getElementById('file-name');
+const appShell = document.querySelector('.app-shell');
+const fullscreenButton = document.querySelector('[data-action="fullscreen"]');
 
 const SVG_URLS = [
   './assets/mapa-conceptual.svg',
@@ -32,6 +34,7 @@ const state = {
 
 let svgRoot = null;
 let cameraAnimationFrame = null;
+let controlsHideTimer = null;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -182,6 +185,77 @@ function runTour() {
   tick();
 }
 
+function revealFullscreenControls() {
+  if (document.fullscreenElement !== appShell) return;
+
+  appShell.classList.remove('is-controls-hidden');
+  clearTimeout(controlsHideTimer);
+  controlsHideTimer = setTimeout(() => {
+    if (document.fullscreenElement === appShell) {
+      appShell.classList.add('is-controls-hidden');
+    }
+  }, 3000);
+}
+
+function syncFullscreenState() {
+  const isFullscreen = document.fullscreenElement === appShell;
+  appShell.classList.toggle('is-fullscreen', isFullscreen);
+  fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+  fullscreenButton.setAttribute('aria-label', isFullscreen ? 'Salir de pantalla completa' : 'Entrar en pantalla completa');
+  fullscreenButton.title = isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa';
+  fullscreenButton.querySelector('path').setAttribute('d', isFullscreen
+    ? 'M8 3v5H3m18 0h-5V3M3 16h5v5m13-5h-5v5'
+    : 'M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3');
+
+  clearTimeout(controlsHideTimer);
+  if (isFullscreen) {
+    revealFullscreenControls();
+  } else {
+    appShell.classList.remove('is-controls-hidden');
+  }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement === appShell) {
+      await document.exitFullscreen();
+    } else {
+      await appShell.requestFullscreen();
+    }
+  } catch (error) {
+    showToast('No se pudo cambiar a pantalla completa');
+  }
+}
+
+function setupFullscreenControls() {
+  fullscreenButton.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', syncFullscreenState);
+  appShell.addEventListener('pointermove', revealFullscreenControls);
+  appShell.addEventListener('pointerdown', revealFullscreenControls);
+}
+
+function setupKeyboardNavigation() {
+  const sceneOrder = ['fit', 'section1', 'section2', 'section3', 'section4'];
+
+  document.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+    if (document.fullscreenElement === appShell) {
+      revealFullscreenControls();
+    }
+
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    event.preventDefault();
+    const currentScene = state.active === 'actual' ? 'fit' : state.active;
+    const currentIndex = Math.max(sceneOrder.indexOf(currentScene), 0);
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const nextIndex = (currentIndex + direction + sceneOrder.length) % sceneOrder.length;
+    setView(sceneOrder[nextIndex]);
+  });
+}
+
 function setupZoomControls() {
   document.querySelector('[data-action="fit"]').addEventListener('click', () => {
     setView('fit');
@@ -328,6 +402,8 @@ async function loadMap() {
 }
 
 setupZoomControls();
+setupFullscreenControls();
+setupKeyboardNavigation();
 attachPointerDrag();
 attachWheelZoom();
 loadMap();
