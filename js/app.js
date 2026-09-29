@@ -16,7 +16,7 @@ const MAP_WIDTH = 4135;
 const MAP_HEIGHT = 3508;
 
 const viewPresets = {
-  fit: { label: 'Vista general', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
+  fit: { label: 'Vista general', target: { x: 0, y: 0, w: 3820, h: 2600 } },
   actual: { label: '100%', target: { x: 0, y: 0, w: MAP_WIDTH, h: MAP_HEIGHT } },
   section1: { label: 'Antenas WiFi', target: { x: 5, y: 200, w: 1440, h: 900 } },
   section2: { label: 'Satelital', target: { x: 2253, y: 107, w: 1654, h: 1347 } },
